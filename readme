@@ -1,0 +1,38 @@
+WOZ (=Waardebepaling Onroerende Zaak) values from wozwaardeloket.nl
+
+Eventually you'll see here:
+
+1.
+Powershell script to extract WOZ data into .JSON files
+
+2.
+T-SQL script to load the data into database WOZ
+
+3.
+T-SQL script to load 'energyindex' data (CSV format from https://www.ep-online.nl/PublicData
+
+4.
+script to check which valid BAG ids are missing in WOZ
+script to link Energieindex to WOZ (and BAG)
+scripts to link WOZ to HUISV_AANBOD
+scripts to link WOZ and some CBS data
+
+eventually:
+getting a model to predict the rent value of a property, especially social housing properties.
+For social housing that's largely dependent on WOZ-value, sqm floor of rooms, and energyindex.
+
+and
+getting models to find anomalies in the available WOZ data
+
+
+PLEASE NOTE:
+Not all WOZ-data is available via the site wozwaardeloket.nl
+The site has some sort of a fair use policy, but apparently no-one cares as early May 2021 (the time Dutch tax office and statistics office freeze their WOZ data), the site seemed overloaded, whereas end June I could extract data of about 50k properties an hour in 6 parallel running processes (still taking about 2 full weeks)
+
+There are anomalies, e.g. about 150k+ properties with not yet a 20200101 value while they have a 20190101 value (the difference between subsequent earlier years was only about 30k+)
+
+It stays a 'moving target' as people can and will object against WOZ-estimates by the local council, as there are local taxes based on that value, as well as national taxes on capital.
+And the handling of objections carries over the national 'freeze' date.
+
+
+
