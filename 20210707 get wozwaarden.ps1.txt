@@ -1,0 +1,227 @@
+<#
+gets WOZ data from www.wozwaardeloket.nl
+
+Reads ids from $inputids in directory $outputdir
+
+you have to change te websession about every 12 requests (I set it on 10)
+occasionally files get a bit big en break while importing in SQL so restricted batches to about 25k requests
+
+Running several in parallel I received about 50k requests an hour
+If you need to find out the possible ids I'd suggest taking all VBO, LIG, STA, and PND from the BAG extracts.
+That's about 20m requests, which will take about 3 full weeks.
+For a subsequent run you only need to run the IDs that delivered something (totalfeatures<>0 AND totalfeatures IS NOT NULL)
+Will still takes about 10 full days.
+
+occasionally you get error returns from the server: in that case [data] contains the string 'glassfish'
+Just rerun these ids.
+
+
+Note: it is really 'brute' brute-force, so don't use it unnecessary.
+
+#>
+
+$outputdir = "S:\_ue\WOZ\";   ## <-- CHANGE !!!
+$inputids = "20210717glassfish.csv";  ## <-- CHANGE !!!
+
+$batchcounter = 1
+#$counter = 176600
+#$justrestarted = $true
+$justrestarted = $false
+#$startID = "0222010000647842" # 
+$batchnumber = 0 # number of batches of 100 to put in 1 file
+$cookierefreshsize = 10
+$scrapesize = 100  # normal: 100
+$batchsize = 250 # normal: 250 # $scrapesize x $batchsize = number of ids = normal 25000
+
+$wasOK = $null
+$counter = 0
+$pc = $null
+$url = $null
+$wr = $null
+$alldata = $null 
+$newfile = "Y"
+
+#$useragent = "alpha247"
+$useragent = "$useragent$input"
+
+# input file with PCs
+
+# input file
+$inputfile = "$outputdir$inputids"
+# output files
+$outputfile = "$inputfile"+"_DATA"+"$batchcounter"+".JSON"
+$inputfile
+$outputfile
+#change window title
+$host.ui.RawUI.WindowTitle = "Getting WOZ from $inputids"
+
+
+$nl = [Environment]::NewLine
+
+# get the websession
+$url="https://www.wozwaardeloket.nl/index.jsp?a=1&accept=true"
+$ProgressPreference = 'SilentlyContinue'    # Subsequent calls do not display UI.
+  $webrequest = Invoke-WebRequest -Uri $url -SessionVariable websession -Useragent $useragent
+$ProgressPreference = 'Continue'            # Subsequent calls do display UI.
+$sessioncounter = 0
+$scrapingcounter = 1  # number (100 to write to file)
+
+# add opening bracket
+Add-Content $outputfile "["
+
+try { # 1st try
+	for(;;) { # begin for loop 1
+	  $reader = New-Object System.IO.StreamReader($inputfile)
+	  # loop to startID
+	  # Write-Host "top of 1st for"
+		try { # 2nd try
+		  for(;;) { # begin for loop 2
+		    $line = $reader.ReadLine()
+		    if ($line -eq $null){Return}
+	      if ($justrestarted -eq $true) {
+	        if ($line -ne $startID){
+	          continue
+#	          Write-Host "Restarted"
+	        }else{
+	          $justrestarted = $false
+#	          Write-Host "Restarted : false"
+	        }
+	      }else{
+	        #
+	      }
+
+				$wobj_bag_obj_id = $line
+			
+[XML]$wozpost=@"
+<wfs:GetFeature 
+  xmlns:wfs="http://www.opengis.net/wfs" service="WFS" version="1.1.0" xsi:schemaLocation="http://www.opengis.net/wfs http://schemas.opengis.net/wfs/1.1.0/wfs.xsd" 
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" outputFormat="application/json">
+		<wfs:Query typeName="wozloket:woz_woz_object" srsName="EPSG:28992" 
+			xmlns:WozViewer="http://WozViewer.geonovum.nl" 
+			xmlns:ogc="http://www.opengis.net/ogc">
+				<ogc:Filter 
+					xmlns:ogc="http://www.opengis.net/ogc">
+						<ogc:And>
+							<ogc:PropertyIsEqualTo matchCase="true">
+								<ogc:PropertyName>wobj_bag_obj_id</ogc:PropertyName>
+								<ogc:Literal>$wobj_bag_obj_id</ogc:Literal>
+							</ogc:PropertyIsEqualTo>
+						</ogc:And>
+				</ogc:Filter>
+		</wfs:Query>
+</wfs:GetFeature>
+"@
+
+				$wozurl = "https://www.wozwaardeloket.nl/woz-proxy/wozloket"
+	      $counter++
+	      
+	      # refresh websession cookies
+	      if ($sessioncounter -eq $cookierefreshsize) {
+	  			$ProgressPreference = 'SilentlyContinue'    # Subsequent calls do not display UI.
+	        $webrequest = Invoke-WebRequest -Uri $url -SessionVariable websession -Useragent $useragent
+	  			$ProgressPreference = 'Continue'            # Subsequent calls do display UI.
+	        $sessioncounter = 0
+	      }else{
+	        $sessioncounter++
+	      }
+
+	      # check batch
+	      If ($batchnumber -eq $batchsize){
+	        # add closing bracket ]
+	        Add-Content $outputfile "]"
+	        # open new file
+	        $batchcounter++
+	        $outputfile = "$inputfile"+"_DATA"+"$batchcounter"+".JSON"
+	        $batchnumber = 0
+	        # add opening bracket [
+	        Add-Content $outputfile "["
+	        $newfile = "Y"
+	      }else{
+          #
+	      }
+
+	      If ($newfile -eq "Y"){
+	        #strip 1st comma if not null
+	        If ($alldata -ne $null){
+		        If ($alldata.Substring(0,1) -eq ","){
+		          $alldata = $alldata.Substring(1)
+		          $newfile = "N"
+		        }
+	        }
+	      }else{
+	        # do nothing
+	      }
+
+	      # intermediate saving after 100
+	      if ($scrapingcounter -eq $scrapesize) {
+	        Add-Content $outputfile "$alldata"
+	        $alldata = $null 
+	        $startID = $line
+	        $scrapingcounter = 1
+	        $batchnumber++
+	        Write-Host "Counter = $counter  and ID = $wobj_bag_obj_id"
+	      }else{
+	        $scrapingcounter++
+	      }
+
+	#      # add comma
+	#      If ($wasOK -eq "OK"){
+	#        $alldata = $alldata + ","
+	#      }else{
+	#        # do nothing
+	#      }
+	#      $wasOK = $null
+
+	      
+	      
+
+				$ProgressPreference = 'SilentlyContinue'    # Subsequent calls do not display UI.
+	        $wozdata = $null
+				  $wozdata = Invoke-RestMethod -Uri $wozurl -Method POST -ContentType "application/json" -Body $wozpost -WebSession $websession -Useragent $useragent
+				$ProgressPreference = 'Continue'            # Subsequent calls do display UI.
+	      $Extractiondate=Get-Date -format "dd-MMM-yyyy HH:mm:ss"
+				$alldata = $alldata + ',{"wobj_bag_obj_id":"' + "$wobj_bag_obj_id" + '",' + '"ExtractionDate":"' + "$Extractiondate" + '",' + '"data":[' + ($wozdata | ConvertTo-Json -Depth 100 -Compress) + ']}'
+				$wasOK = "OK"
+		  } # end for loop 2 
+		}catch{ # 2nd catch
+#		   Write-Host "Error on 1st catch $wobj_bag_obj_id"
+		   $startID = $wobj_bag_obj_id
+	     $justrestarted = $true
+	     $wasOK = "NOK"
+		}finally{  # 2nd finally
+#	    Write-Host "in 2nd finally"
+		 # needs this apparently
+	#  $alldata = $null 
+	  $reader.Close()
+	  $reader = $null
+	  # garbage collector
+	  [GC]::Collect()
+	  }  # end 2nd try
+
+#	  Add-Content $outputfile "$alldata"
+#	  Add-Content $outputfile "]"
+#	  Write-Host "end of 1st for loop"
+	  
+	} # end for loop 1
+}catch{ # 1st try
+#  Write-Host "catch in 1st for loop"
+}finally{ # 1st finally
+  Add-Content $outputfile "$alldata"
+  Add-Content $outputfile "]"
+#  Write-Host "finally in 1st for loop"
+} # end of 1st try
+
+#Add-Content $outputfile "$alldata"
+# add closing bracket ]
+#Write-Host "end out of loop"
+
+$reader.Close()
+$reader = $null
+# garbage collector
+[GC]::Collect()
+
+# give notification
+#Add-Type -AssemblyName System.Windows.Forms
+#$msg = "Script in window $inputids finished"
+#[System.Windows.Forms.MessageBox]::Show("$msg")
+
