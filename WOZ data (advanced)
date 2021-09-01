@@ -1,0 +1,25 @@
+WOZ data (advanced)
+
+Previous attempts give you some WOZ data, but not necessarily all of what's available.
+How can we know all? How can we know the relevant ids? And how can we extract it, even without BAG data?
+
+1 Ask for total per 'gemeentecode'
+You cannot know beforehand how many woz-objects exists in the DB
+So we check by asking for the whole range vor each gemeente
+The value will be in totalFeatures.
+
+2. Page through all objects
+We have to check first which objects exist.
+Once we have the whole range of objects we can start asking each 'wobj_bag_obj_id' or  'wobj_obj_id' for WOZ value and peildatum
+For efficiency you can use the data from the 1st step as the first page of 500 objects.
+500 objects is currently the maximum number you can get in one request
+
+3. Get values for relevant objects
+Unfortunately you won't get woz-waarde and 'peildatum' when asking for a range.
+Loop through all relevant wobj_bag_obj_id and where these don't give WOZ values, revert to wobj_obj_id
+
+Notes:
+Check if wobj_obj_id also give values, just like wobj_bag_obj_id? A: Yes
+For some gemeenten above route showed that up to 10% of DB-entries was missed in earlier approaches.
+Max totalfeatures returning with a WOZ value using wobj_bag_obj_id is 56, but there are several with less which don't return a WOZ value.
+Using only wobj_bag_obj_id misses about 1m wobj_obj_id wh woz-value and 'peildatum', that's between 5 and 10%.
