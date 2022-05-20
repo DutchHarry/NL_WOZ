@@ -1,3 +1,16 @@
+update 20-May-2022
+wozwaardeloket.nl has changed its ways ...
+Nothing here still works with the new setup
+
+Previously I could get data of 10k objects within an hour, thus taking about 1000 hours for all NL data.
+Running a few in parallel reduced the time a bit.
+
+With the new setup I can get barely 600 objects per proces per hour.
+I'll use that to finalise my 2021 dataset.
+After that I'll publish the new scripts.
+
+=============================
+
 WOZ (=Waardebepaling Onroerende Zaak) values from wozwaardeloket.nl
 
 Eventually you'll see here:
