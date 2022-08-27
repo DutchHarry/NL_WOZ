@@ -1,0 +1,5 @@
+wozwaardeloket has changed to a new layout
+If you extract the json WOZ data you don;t get the sqm oppervlakte
+The 'oppervlakte' shown on site is the most recent value from BAG, so not necessarily related to actual sqm on peildatum.
+That's confusing, to say the least, as WOZ is supposed to move to a more grounde valuation per sqm.
+So you would expect the sqm be included in the WOZ data, but it isn't!
