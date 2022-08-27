@@ -1,0 +1,125 @@
+<#
+with the new wozwaardeloket ...
+There are two ways to get WOZ data
+1.	via nummeraanduiding, from BAG Nummeraanduiding
+2.	via wozobjectnummer 
+
+You can get the wozobjectnummer below:
+
+1 start with PC4 nnnn  = suggest1
+2 add letters PC6 where needed size > 9998 = suggest2
+3 add more (woonplaats) if letters are not enough = suggest3
+
+#>
+
+
+$userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:99.0) Gecko/20100101 Firefox/99.0"            
+$requesttype = "Webrequest"
+$TimeoutSeconds = 600 
+$alldataSaveSize = 25000000
+$WozSaveDirectory = "S:\_ue\WOZ\"
+$inputids = "20220827_suggest_N_1.csv"
+#$inputids = "20220827_suggest_N_2.csv"
+#$inputids = "20220827_suggest_N_3.csv"
+$prefix1length = "$inputids".length
+$basewozurl="https://www.wozwaardeloket.nl/wozwaardeloket-api/v1/suggest?straat="
+$inputfile = -join("$WozSaveDirectory","$inputids")
+$outputfile = -join("$WozSaveDirectory","$inputids","_","$batchnumber",".json")
+$host.ui.RawUI.WindowTitle = "Getting WOZ from $inputids"
+$finished = "N"
+
+Do
+{
+  $alldata = $null
+  $alldataSize = 0
+	$test0 = (Get-Childitem "$WozSaveDirectory$inputids*.json")
+	If ( $test0 -eq $null){
+	  $batchnumber = 0  
+	}else{
+	  [int]$batchnumber = (Get-Childitem "$WozSaveDirectory$inputids*.json" | Sort-Object -Descending -Property LastWriteTime | select -First 1).Name.Replace(".json","").Substring($prefix1length+1)
+	  $batchnumber++
+	}
+  $outputfile = -join("$WozSaveDirectory","$inputids","_","$batchnumber",".json")
+
+	$content = get-content $inputfile
+	$NumberOfLines = $content.count
+
+  try{
+    For ($linecounter = 0;$linecounter -le $NumberOfLines; $linecounter++ ) {
+      $suggest = $content[$linecounter]
+      If ($suggest -eq $null){
+        $finished = "Y"
+        Return
+      }
+      If ($RestartID -ne $null){
+        Do{
+          $suggest = $content[$linecounter]
+          $linecounter++
+        }While ($RestartID -gt $suggest)
+        $linecounter--
+      }
+      $Extractiondate=Get-Date -format "dd-MMM-yyyy HH:mm:ss" # here for same date when paging!
+      $pc4 = $suggest.substring(0,4)
+      $wozurl = "$basewozurl$suggest"
+      Write-Host "$wozurl"
+        $ProgressPreference = 'SilentlyContinue'
+        $wozdata = $null
+        $wozdata1 = $null
+        try {
+#          $webrequest = $null
+#          $webrequest = Invoke-WebRequest -Uri $url -SessionVariable websession -Useragent $useragent -TimeoutSec $TimeoutSeconds
+          #If ($requesttype -eq "Webrequest"){
+#            $wozdata1 = Invoke-Webrequest -Uri $wozurl -WebSession $websession -Useragent $useragent -TimeoutSec $TimeoutSeconds
+            $wozdata1 = Invoke-Webrequest -Uri $wozurl -TimeoutSec $TimeoutSeconds
+          #}else{
+          #  $wozdata1 = Invoke-RestMethod -Uri $wozurl -WebSession $websession -Useragent $useragent -TimeoutSec $TimeoutSeconds
+          #}
+        }catch{
+        }
+        $ProgressPreference = 'Continue'
+        #If ($requesttype -eq "Webrequest"){
+          $wozdata = ($wozdata1.Content | ConvertFrom-Json)
+        #}else{
+        #  $wozdata = $wozdata1
+        #}
+
+        If ( ($wozdata -eq $null) -or ($wozdata -like "*glassfish*") -or ($wozdata -like "*Maximum aantal verzoeken is overschreden*") ){
+        Write-Host "Error: $suggest"
+        #  $PageNumber--
+        #  If($PageNumber -lt -1){$PageNumber = -1; $NumberOfPages = 0; }
+        }
+
+        $alldata = $alldata + ',{"PC4":"' + "$pc4" + '",' + '"Suggest":"' + "$suggest" + '",' + '"ExtractionDate":"' + "$Extractiondate" + '",' + '"data":[' + ($wozdata | ConvertTo-Json -Depth 100 -Compress) + ']}'
+        $alldataSize = $alldata.Length
+
+         [Console]::WriteLine("L $linecounter  S $suggest") # comment out for speed
+        If ($alldataSize -gt $alldataSaveSize){
+          $alldata = -join("[",$alldata.Substring(1),"]")
+          Add-Content $outputfile $alldata
+          $alldata = $null 
+          $alldataSize = 0
+          $batchnumber++
+          $outputfile = -join("$WozSaveDirectory","$inputids","_","$batchnumber",".json")
+          [Console]::WriteLine("$Extractiondate  $outputfile")
+          [Console]::WriteLine("L $linecounter  S $suggest")
+        }
+#      }
+    }
+  }catch{
+    Write-Host "$suggest"
+    $RestartID = $suggest
+  }finally{
+    If ($alldata -ne $null){
+      $alldata = -join("[",$alldata.Substring(1),"]")
+      Add-Content $outputfile $alldata
+       [Console]::WriteLine("$Extractiondate  $outputfile")
+       [Console]::WriteLine("L $linecounter  S $suggest")
+    }
+  }
+  [Console]::WriteLine("After Finally")
+}
+While ($finished -eq "N")
+
+
+
+
