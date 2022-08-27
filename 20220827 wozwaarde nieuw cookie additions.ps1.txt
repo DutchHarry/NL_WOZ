@@ -1,0 +1,209 @@
+
+<#
+you can request about 600 wozzwaarden per process per hour
+either by
+$woztype = "wozobjectnummer" # "wozobjectnummer" OR "nummeraanduiding"
+
+You need to manually add a SESSION and LB_Sticky to the cookie of the process
+
+it needs another session after 12 requests, take 10 to be safe
+but can add same cookie after 12 with all error 429 too many requests
+
+SESSION and LB_STICKY seem coupled, but you can have same LB_STICKY with different SESSION
+
+7 in parallel on a 2 processor system worked ok
+That's 7*600 = 4200 per hour
+
+max i tried is 15000 per hour on multicore system
+So for the whole of NL that'll take about a month.
+By that time a lot may have changed ;^)
+
+system usually updates during saturday
+after that you can run on same cookie with 600 per process per hour for 6 days
+
+More than sufficient for extracting your gemeente for most gemeenten
+
+Below won't work until you copied in the SESSION and LB_Sticky from a fresh session at wozwaardeloket.nl
+
+haven't found ways to automatically add the required variablse to the cookie yet!
+
+
+Oh yes, needs a manual flush of last bit of data by manually copying in powershell window:
+
+$alldata = -join("[",$alldata.Substring(1),"]")
+Add-Content $outputfile $alldata
+
+surely you can automate that yourselves
+
+#>
+
+$inputids = "20220715_missing1_1.csv"
+#$inputids = "20220715_missing1_2.csv"
+#$inputids = "20220715_missing1_3.csv"
+#$inputids = "20220715_missing1_4.csv"
+#$inputids = "20220715_missing1_5.csv"
+#$inputids = "20220715_missing1_6.csv"
+#$inputids = "20220715_missing1_7.csv"
+$SESSIONValue = "F46001A6AC8A08A4721B21AC9EAED437"
+#$SESSIONValue = ""
+#$SESSIONValue = ""
+#$SESSIONValue = ""
+#$SESSIONValue = ""
+#$SESSIONValue = ""
+#$SESSIONValue = ""
+$LB_STICKYValue = "http://10.0.2.68:8080"
+#$LB_STICKYValue = ""
+#$LB_STICKYValue = ""
+#$LB_STICKYValue = ""
+#$LB_STICKYValue = ""
+#$LB_STICKYValue = ""
+#$LB_STICKYValue = ""
+
+$woztype = "wozobjectnummer" # "wozobjectnummer" OR "nummeraanduiding"
+
+$SecondsWaitBetweenRequests = 0  # 6 and 8 OK 0  does 10 before 429
+$SecondsWaitBetween10Requests = 60  # 60 does 10 before 429
+#$SecondsWaitBetweenBatches
+
+$url = "https://www.wozwaardeloket.nl"
+$userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:99.0) Gecko/20100101 Firefox/99.0"            
+$TimeoutSeconds = 600 
+$requesttype = "Webrequest"
+$TimeoutSeconds = 300 
+$PagingSize = 100
+$alldataSaveSize = 1000000
+$WozSaveDirectory = "S:\_ue\WOZ\"
+$prefix1length = "$inputids".length
+$finished = "N"
+
+$SessionUntilCookieRefresh = 8 # below 12
+$SessionCounterForCookieRefresh = 100  # set at level that 1st call guarantees a refresh
+
+$alldata = $null
+$alldataSize = 0
+$test0 = (Get-Childitem "$WozSaveDirectory$inputids*.json")
+If ( $test0 -eq $null){
+  $batchnumber = 0  
+}else{
+  [int]$batchnumber = (Get-Childitem "$WozSaveDirectory$inputids*.json" | Sort-Object -Descending -Property LastWriteTime | select -First 1).Name.Replace(".json","").Substring($prefix1length+1)
+  $batchnumber++
+}
+
+$inputfile = -join("$WozSaveDirectory","$inputids")
+$outputfile = -join("$WozSaveDirectory","$inputids","_","$batchnumber",".json")
+$host.ui.RawUI.WindowTitle = "Getting WOZ from $inputids"
+
+$content = get-content $inputfile
+$NumberOfLines = $content.count
+
+### BEGIN For READER loop #################################################################################################################
+For ($linecounter = 0;$linecounter -le $NumberOfLines; $linecounter++ ) { # BEGIN For READER loop
+
+	$wozobjtypeID = $content[$linecounter]
+	If ($wozobjtypeID -eq $null){
+	  $finished = "Y"
+	  Return
+	}
+
+	If ($RestartID -ne $null){
+	  Do{
+	    $wozobjtypeID = $content[$linecounter]
+	    $linecounter++
+	  }While ($RestartID -gt $wozobjtypeID)
+	  $linecounter--
+	}
+
+
+
+	# get websession and cookierefresh
+	If ($SessionCounterForCookieRefresh -gt $SessionUntilCookieRefresh){
+	  $url="https://www.wozwaardeloket.nl/"
+	  $ProgressPreference = 'SilentlyContinue'    # Subsequent calls do not display UI.
+	    $webrequest = Invoke-WebRequest -Uri $url -SessionVariable websession -Useragent $useragent -TimeoutSec $TimeoutSeconds
+	    $cookies = $null
+			$cookies = $websession.Cookies.GetCookies($url)
+			$cookie = New-Object System.Net.Cookie     
+			$cookie.Name = "SESSION"
+			$cookie.Value = $SESSIONValue 
+			$cookie.Domain = "www.wozwaardeloket.nl"
+			$websession.Cookies.Add($cookie);
+			$cookie.Name = "LB_STICKY"
+			$cookie.Value = $LB_STICKYValue
+			$cookie.Domain = "www.wozwaardeloket.nl"
+			$websession.Cookies.Add($cookie);
+	  $ProgressPreference = 'Continue'            # Subsequent calls do display UI.
+	  $SessionCounterForCookieRefresh = 0
+	  Start-Sleep -Seconds $SecondsWaitBetween10Requests
+	}else{
+	  $SessionCounterForCookieRefresh++
+	}
+
+  If($woztype -eq "wozobjectnummer"){
+  	$basewozurl = "https://www.wozwaardeloket.nl/wozwaardeloket-api/v1/wozwaarde/wozobjectnummer/"
+  }elseif($woztype -eq "nummeraanduiding"){
+  	$basewozurl = "https://www.wozwaardeloket.nl/wozwaardeloket-api/v1/wozwaarde/nummeraanduiding/"
+  }
+	$wozurl = "$basewozurl$wozobjtypeID"
+
+	$wozdata1 = $null
+	$wozdata1 = try {
+	  Invoke-WebRequest -Uri $wozurl -WebSession $websession -ContentType "application/json" -Useragent $useragent -TimeoutSec $TimeoutSeconds -ErrorAction SilentlyContinue
+	}catch{
+	   $_.Exception.Response.StatusCode.Value__
+	  #Write-Verbose "An exception was caught: $($_.Exception.Message)"
+	  #  $_.Exception.Response 
+	}
+
+	#If ( ($wozdata1 -eq $null) -or ($wozdata1 -like "*glassfish*") -or ($wozdata1 -like "*Maximum aantal verzoeken is overschreden*") ){
+	If( ($wozdata1 -eq $null)  -Or ($wozdata1 -eq 504) -Or ($wozdata1 -eq 429) -or  ($wozdata1 -eq 412) ){
+	# -or ($wozdata1 -eq 404)
+	  Write-Host "Error : $wozobjtypeID  $wozdata1 "
+	  If ( ($wozdata1 -eq '429') -or  ($wozdata1 -eq 412) ){
+	  	#Stop 429=rety-after; 412=session expired?
+	  	Write-Host "Error $wozdata1 ; stopping"
+	  	Break
+	  }
+	}else{
+	  Write-host "Correct : $wozobjtypeID"
+		$wozdata = $null
+		If ($requesttype -eq "Webrequest"){
+			$wozdata = try{
+				iF($wozdata1.content -eq $null){
+					$wozdata1
+				}else{
+				  ($wozdata1.Content | ConvertFrom-Json)
+				}
+			}catch{
+				$wozdata1
+			}
+		}else{
+		  $wozdata = $wozdata1
+		}
+		$Extractiondate=Get-Date -format "dd-MMM-yyyy HH:mm:ss"
+		$alldata = $alldata + ',{"wozobjtypeID":"' + "$wozobjtypeID" + '",' + '"ExtractionDate":"' + "$Extractiondate" + '",' + '"data":[' + ($wozdata | ConvertTo-Json -Depth 100 -Compress) + ']}'
+		$alldataSize = $alldata.Length
+	}
+
+	  Start-Sleep -Seconds $SecondsWaitBetweenRequests
+
+
+	# check if saving needed
+	If ($alldataSize -gt $alldataSaveSize){
+	  $alldata = -join("[",$alldata.Substring(1),"]")
+	  Add-Content $outputfile $alldata
+	  $alldata = $null 
+	  $alldataSize = 0
+	  $batchnumber++
+	  $outputfile = -join("$WozSaveDirectory","$inputids","_","$batchnumber",".json")
+	#  Start-Sleep -Seconds $SecondsWaitBetweenBatches #10
+	  $SessionCounterForCookieRefresh = 100
+	}
+
+} # END For READER loop
+
+$alldata = -join("[",$alldata.Substring(1),"]")
+Add-Content $outputfile $alldata
+$alldata = $null 
+$alldataSize = 0
+$batchnumber++
+$outputfile = -join("$WozSaveDirectory","$inputids","_","$batchnumber",".json")
